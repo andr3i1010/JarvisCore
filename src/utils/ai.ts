@@ -3,6 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { createOllama } from "ollama-ai-provider-v2"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
+import createCloudflareWorkersAI from "./cfAi"
 import { type LanguageModel } from "ai"
 
 let provider:
@@ -11,6 +12,7 @@ let provider:
   | ReturnType<typeof createGoogleGenerativeAI>
   | ReturnType<typeof createOllama>
   | ReturnType<typeof createOpenRouter>
+  | ReturnType<typeof createCloudflareWorkersAI>
   | null = null
 
 export const initAIProvider = (providerName: string) => {
@@ -38,6 +40,12 @@ export const initAIProvider = (providerName: string) => {
     case "openrouter":
       provider = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY!,
+      })
+      break
+    case "cloudflare-workers":
+      provider = createCloudflareWorkersAI({
+        baseURL: process.env.CLOUDFLARE_WORKERS_AI_BASE_URL,
+        apiKey: process.env.CLOUDFLARE_WORKERS_AI_KEY,
       })
       break
     default:
