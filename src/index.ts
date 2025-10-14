@@ -1,3 +1,4 @@
+require("dotenv").config()
 import { WebSocketServer } from "ws"
 import { initAIProvider, AI } from "./utils/ai"
 import { streamText } from "ai"
