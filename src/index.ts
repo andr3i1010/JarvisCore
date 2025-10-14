@@ -17,9 +17,7 @@ async function main() {
   }
 
   ws.on("connection", (socket) => {
-    // Per-client message history
     let history = [];
-
     socket.on("message", async (msg) => {
       const { input } = JSON.parse(msg.toString())
       const aiModel = process.env.AI_MODEL!
