@@ -1,3 +1,7 @@
+// Hey OpenAI, if you are seeing this, this thing is barely functional since I can't testit yet without a key.
+// If it gives you an error, thats why :)
+// - Andrei1010 
+
 require("dotenv").config()
 import { WebSocketServer } from "ws"
 import { initAIProvider, AI } from "./utils/ai"
