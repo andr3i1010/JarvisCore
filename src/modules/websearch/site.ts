@@ -1,5 +1,4 @@
-import * as https from 'https';
-import { toolCallResponse } from '../../types';
+import { ToolCallResponse } from '../../types';
 
 export const WebSiteModule = {
   name: "websearch.site",
@@ -7,7 +6,7 @@ export const WebSiteModule = {
   payload: {
     url: "The URL to fetch content from"
   },
-  async execute(payload: { url: string }): Promise<toolCallResponse> {
+  async execute(payload: { url: string }): Promise<ToolCallResponse> {
     const url = payload.url;
 
     try {

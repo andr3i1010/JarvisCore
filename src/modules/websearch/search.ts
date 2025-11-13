@@ -1,14 +1,14 @@
 import * as https from 'https';
 import * as cheerio from 'cheerio';
-import { toolCallResponse } from '../../types';
+import { ToolCallResponse } from '../../types';
 
 export const WebSearchModule = {
   name: "websearch.search",
   description: "Search using DuckDuckGo",
   payload: {
-    query: "The search query string"
+    query: "The search query string. Would recommend in the result to also fetch the websites using your websearch.site tool."
   },
-  async execute(payload: { query: string }): Promise<toolCallResponse> {
+  async execute(payload: { query: string }): Promise<ToolCallResponse> {
     const query = payload.query;
     const url = `https://html.duckduckgo.com/html?q=${encodeURIComponent(query)}`;
 

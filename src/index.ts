@@ -7,7 +7,45 @@ import jcCoreCommands from "./util/handlers/jcCommands";
 import { setStoreValue, getStoreValue } from "./util/dataStore";
 import { execSync } from "child_process";
 import { getAIProvider } from "./util/ai/provider";
+import { ToolCallRequest } from "./types";
 import fs from "fs";
+
+function detectToolCalls(text: string): ToolCallRequest[] {
+  const toolCalls: ToolCallRequest[] = [];
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('{') && trimmed.includes('"cmd"')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.cmd && parsed.payload !== undefined) {
+          toolCalls.push(parsed);
+        }
+      } catch (e) {
+        // Invalid JSON, skip
+      }
+    }
+  }
+  return toolCalls;
+}
+
+function logToolCalls(toolCalls: ToolCallRequest[]): void {
+  toolCalls.forEach(call => {
+    log("info", `Tool call detected: cmd="${call.cmd}", payload=${JSON.stringify(call.payload)}`);
+  });
+}
+
+async function executeToolCall(toolCall: ToolCallRequest, modules: any[]): Promise<any> {
+  const moduleName = toolCall.cmd.split('.')[0];
+  const module = modules.find(m => m.name.split('.')[0] === moduleName);
+  
+  if (!module) {
+    throw new Error(`Module not found: ${moduleName}`);
+  }
+  if (typeof module.execute !== 'function') {
+    throw new Error(`No execute method in module: ${moduleName}`);
+  }
+  return module.execute(toolCall.payload);
+}
 
 export default async function main() {
   const commit = execSync('git rev-parse --short HEAD').toString().trim();
@@ -74,23 +112,17 @@ The clock module does not seem to be installed.`;
 
   const modulePrompts: string[] = [];
   for (const mod of moduleObjects) {
-    const name = mod.name.split('.')[0]; // e.g., websearch
+    const name = mod.name.split('.')[0];
     const params = mod.payload || {};
-    const passToClient = false;
+    const paramsString = Object.entries(params)
+      .map(([key, value], idx) => `${idx === 0 ? '' : '  '}${key}: ${value}`)
+      .join('\n');
 
-    let sysPrompt = `${name} module: Can be called by using the main tool call structure. Make sure to customize the parameters as following: 
+    const sysPrompt = `${name} module: Can be called by using the main tool call structure. Make sure to customize the parameters as following: 
 cmd: ${name}
-payload:\n  [parameters]
-passToClient: ${passToClient}`;
+payload:\n  ${paramsString}
+passToClient: false`;
 
-    let paramsString = "";
-    const paramKeys = Object.keys(params);
-    for (let j = 0; j < paramKeys.length; j++) {
-      const key = paramKeys[j];
-      if (j === 0) paramsString += `${key}: ${params[key]}`;
-      else paramsString += `\n  ${key}: ${params[key]}`;
-    }
-    sysPrompt = sysPrompt.replace("[parameters]", paramsString.trim());
     modulePrompts.push(sysPrompt);
   }
 
@@ -123,16 +155,100 @@ passToClient: ${passToClient}`;
             (async () => {
               try {
                 let fullContent = '';
+                const packets: any[] = [];
                 for await (const packet of generator) {
                   if (packet.content) fullContent += packet.content;
-                  client.send(JSON.stringify(packet));
+                  packets.push(packet);
                 }
-                (client as any).messages.push({ role: "assistant", content: fullContent });
+                
+                const detectedCalls = detectToolCalls(fullContent);
+                if (detectedCalls.length === 0) {
+                  // No tool calls - send all packets normally
+                  packets.forEach(p => client.send(JSON.stringify(p)));
+                  (client as any).messages.push({ role: "assistant", content: fullContent });
+                  return;
+                }
+                
+                logToolCalls(detectedCalls);
+                
+                // Check if tool call is at the end of response
+                let userFacingContent = fullContent;
+                let hasToolCallAtEnd = false;
+                
+                for (const toolCall of detectedCalls) {
+                  if (fullContent.trim().endsWith(JSON.stringify(toolCall).trim())) {
+                    userFacingContent = fullContent.replace(JSON.stringify(toolCall), '').trim();
+                    hasToolCallAtEnd = true;
+                    break;
+                  }
+                }
+                
+                // If tool call not at end, send response as-is
+                if (!hasToolCallAtEnd) {
+                  packets.forEach(p => client.send(JSON.stringify(p)));
+                  (client as any).messages.push({ role: "assistant", content: fullContent });
+                  return;
+                }
+                
+                // Send filtered content (without tool call JSON)
+                if (userFacingContent) {
+                  let sentContent = '';
+                  packets.forEach(packet => {
+                    if (packet.content) {
+                      const remaining = userFacingContent.substring(sentContent.length);
+                      if (remaining.length > 0) {
+                        const toSend = remaining.substring(0, packet.content.length);
+                        sentContent += toSend;
+                        client.send(JSON.stringify({ ...packet, content: toSend }));
+                      }
+                    } else {
+                      client.send(JSON.stringify(packet));
+                    }
+                  });
+                }
+                
+                // Execute tool calls
+                const toolResults: { cmd: string; result: any; error?: string }[] = [];
+                for (const toolCall of detectedCalls) {
+                  try {
+                    if (!toolCall.passToClient) {
+                      const result = await executeToolCall(toolCall, moduleObjects);
+                      log("info", `Tool execution result for ${toolCall.cmd}: ${JSON.stringify(result)}`);
+                      toolResults.push({ cmd: toolCall.cmd, result });
+                    }
+                  } catch (err: any) {
+                    log("error", `Tool execution failed for ${toolCall.cmd}: ${err.message}`);
+                    toolResults.push({ cmd: toolCall.cmd, result: null, error: err.message });
+                  }
+                }
+                
+                if (toolResults.length === 0) return;
+                
+                // Send results back to AI for explanation
+                const toolResultsText = toolResults
+                  .map(tr => tr.error ? `${tr.cmd} failed: ${tr.error}` : `${tr.cmd} result: ${JSON.stringify(tr.result)}`)
+                  .join('\n');
+                
+                (client as any).messages.push({ role: "assistant", content: userFacingContent });
+                (client as any).messages.push({ 
+                  role: "user", 
+                  content: `Here are the tool results:\n${toolResultsText}\n\nPlease provide a friendly explanation of these results to the user.` 
+                });
+                
+                let explanationContent = '';
+                const explanationGenerator = AIProvider.streamChat((client as any).messages, {});
+                for await (const packet of explanationGenerator) {
+                  if (packet.content) {
+                    explanationContent += packet.content;
+                    client.send(JSON.stringify(packet));
+                  }
+                }
+                (client as any).messages.push({ role: "assistant", content: explanationContent });
               } catch (err: any) {
                 client.send(JSON.stringify({
                   ok: false,
                   event: "ai.error",
-                  output: (err as any)?.message || String(err)
+                  output: err?.message || String(err)
                 }));
               }
             })();

@@ -1,10 +1,10 @@
-export type toolCallRequest = {
+export type ToolCallRequest = {
   cmd: string;
-  payload?: Record<string, any>;
+  payload: Record<string, any>;
   passToClient?: boolean;
 }
 
-export type toolCallResponse = {
+export type ToolCallResponse = {
   ok: boolean;
   payload?: Record<string, any>;
   output?: string;
