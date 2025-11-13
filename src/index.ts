@@ -37,7 +37,7 @@ function logToolCalls(toolCalls: ToolCallRequest[]): void {
 async function executeToolCall(toolCall: ToolCallRequest, modules: any[]): Promise<any> {
   const moduleName = toolCall.cmd.split('.')[0];
   const module = modules.find(m => m.name.split('.')[0] === moduleName);
-  
+
   if (!module) {
     throw new Error(`Module not found: ${moduleName}`);
   }
@@ -45,6 +45,136 @@ async function executeToolCall(toolCall: ToolCallRequest, modules: any[]): Promi
     throw new Error(`No execute method in module: ${moduleName}`);
   }
   return module.execute(toolCall.payload);
+}
+
+function sendPackets(client: WebSocket, packets: any[]): void {
+  packets.forEach(p => client.send(JSON.stringify(p)));
+}
+
+function filterPacketContent(packets: any[], userFacingContent: string): void {
+  let sentContent = '';
+  packets.forEach(packet => {
+    if (packet.content) {
+      const remaining = userFacingContent.substring(sentContent.length);
+      if (remaining.length > 0) {
+        const toSend = remaining.substring(0, packet.content.length);
+        sentContent += toSend;
+        // Note: This filters but doesn't send - caller must send
+      }
+    }
+  });
+}
+
+async function handleAIChat(
+  client: WebSocket,
+  AIProvider: any,
+  modules: any[],
+  messages: any[]
+): Promise<void> {
+  try {
+    let fullContent = '';
+    const packets: any[] = [];
+    const generator = AIProvider.streamChat(messages, {});
+
+    for await (const packet of generator) {
+      if (packet.content) fullContent += packet.content;
+      packets.push(packet);
+    }
+
+    const detectedCalls = detectToolCalls(fullContent);
+    if (detectedCalls.length === 0) {
+      sendPackets(client, packets);
+      client.send(JSON.stringify({ ok: true, event: "ai.done" }));
+      messages.push({ role: "assistant", content: fullContent });
+      return;
+    }
+
+    logToolCalls(detectedCalls);
+
+    // Check if tool call is at the end of response
+    const toolCallAtEnd = detectedCalls.find(tc =>
+      fullContent.trim().endsWith(JSON.stringify(tc).trim())
+    );
+
+    const userFacingContent = toolCallAtEnd
+      ? fullContent.replace(JSON.stringify(toolCallAtEnd), '').trim()
+      : fullContent;
+
+    // If tool call not at end, send response as-is
+    if (!toolCallAtEnd) {
+      sendPackets(client, packets);
+      client.send(JSON.stringify({ ok: true, event: "ai.done" }));
+      messages.push({ role: "assistant", content: fullContent });
+      return;
+    }
+
+    // Send filtered content (without tool call JSON)
+    if (userFacingContent) {
+      let sentContent = '';
+      packets.forEach(packet => {
+        if (packet.content) {
+          const remaining = userFacingContent.substring(sentContent.length);
+          if (remaining.length > 0) {
+            const toSend = remaining.substring(0, packet.content.length);
+            sentContent += toSend;
+            client.send(JSON.stringify({ ...packet, content: toSend }));
+          }
+        } else {
+          client.send(JSON.stringify(packet));
+        }
+      });
+    }
+
+    // Execute tool calls
+    const toolResults = await Promise.allSettled(
+      detectedCalls
+        .filter(tc => !tc.passToClient)
+        .map(async tc => {
+          try {
+            const result = await executeToolCall(tc, modules);
+            log("info", `Tool execution result for ${tc.cmd}: ${JSON.stringify(result)}`);
+            return { cmd: tc.cmd, result, error: null };
+          } catch (err: any) {
+            log("error", `Tool execution failed for ${tc.cmd}: ${err.message}`);
+            return { cmd: tc.cmd, result: null, error: err.message };
+          }
+        })
+    );
+
+    const results = toolResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => (r as PromiseFulfilledResult<any>).value);
+
+    if (results.length === 0) return;
+
+    // Send results back to AI for explanation
+    const toolResultsText = results
+      .map(r => r.error ? `${r.cmd} failed: ${r.error}` : `${r.cmd} result: ${JSON.stringify(r.result)}`)
+      .join('\n');
+
+    messages.push({ role: "assistant", content: userFacingContent });
+    messages.push({
+      role: "user",
+      content: `Here are the tool results:\n${toolResultsText}\n\nPlease provide a friendly explanation of these results to the user.`
+    });
+
+    let explanationContent = '';
+    const explanationGenerator = AIProvider.streamChat(messages, {});
+    for await (const packet of explanationGenerator) {
+      if (packet.content) {
+        explanationContent += packet.content;
+        client.send(JSON.stringify(packet));
+      }
+    }
+    client.send(JSON.stringify({ ok: true, event: "done" }));
+    messages.push({ role: "assistant", content: explanationContent });
+  } catch (err: any) {
+    client.send(JSON.stringify({
+      ok: false,
+      event: "ai.error",
+      output: err?.message || String(err)
+    }));
+  }
 }
 
 export default async function main() {
@@ -150,108 +280,7 @@ passToClient: false`;
               return;
             }
             (client as any).messages.push({ role: "user", content: prompt });
-            const messages = (client as any).messages;
-            const generator = AIProvider.streamChat(messages, {});
-            (async () => {
-              try {
-                let fullContent = '';
-                const packets: any[] = [];
-                for await (const packet of generator) {
-                  if (packet.content) fullContent += packet.content;
-                  packets.push(packet);
-                }
-                
-                const detectedCalls = detectToolCalls(fullContent);
-                if (detectedCalls.length === 0) {
-                  // No tool calls - send all packets normally
-                  packets.forEach(p => client.send(JSON.stringify(p)));
-                  (client as any).messages.push({ role: "assistant", content: fullContent });
-                  return;
-                }
-                
-                logToolCalls(detectedCalls);
-                
-                // Check if tool call is at the end of response
-                let userFacingContent = fullContent;
-                let hasToolCallAtEnd = false;
-                
-                for (const toolCall of detectedCalls) {
-                  if (fullContent.trim().endsWith(JSON.stringify(toolCall).trim())) {
-                    userFacingContent = fullContent.replace(JSON.stringify(toolCall), '').trim();
-                    hasToolCallAtEnd = true;
-                    break;
-                  }
-                }
-                
-                // If tool call not at end, send response as-is
-                if (!hasToolCallAtEnd) {
-                  packets.forEach(p => client.send(JSON.stringify(p)));
-                  (client as any).messages.push({ role: "assistant", content: fullContent });
-                  return;
-                }
-                
-                // Send filtered content (without tool call JSON)
-                if (userFacingContent) {
-                  let sentContent = '';
-                  packets.forEach(packet => {
-                    if (packet.content) {
-                      const remaining = userFacingContent.substring(sentContent.length);
-                      if (remaining.length > 0) {
-                        const toSend = remaining.substring(0, packet.content.length);
-                        sentContent += toSend;
-                        client.send(JSON.stringify({ ...packet, content: toSend }));
-                      }
-                    } else {
-                      client.send(JSON.stringify(packet));
-                    }
-                  });
-                }
-                
-                // Execute tool calls
-                const toolResults: { cmd: string; result: any; error?: string }[] = [];
-                for (const toolCall of detectedCalls) {
-                  try {
-                    if (!toolCall.passToClient) {
-                      const result = await executeToolCall(toolCall, moduleObjects);
-                      log("info", `Tool execution result for ${toolCall.cmd}: ${JSON.stringify(result)}`);
-                      toolResults.push({ cmd: toolCall.cmd, result });
-                    }
-                  } catch (err: any) {
-                    log("error", `Tool execution failed for ${toolCall.cmd}: ${err.message}`);
-                    toolResults.push({ cmd: toolCall.cmd, result: null, error: err.message });
-                  }
-                }
-                
-                if (toolResults.length === 0) return;
-                
-                // Send results back to AI for explanation
-                const toolResultsText = toolResults
-                  .map(tr => tr.error ? `${tr.cmd} failed: ${tr.error}` : `${tr.cmd} result: ${JSON.stringify(tr.result)}`)
-                  .join('\n');
-                
-                (client as any).messages.push({ role: "assistant", content: userFacingContent });
-                (client as any).messages.push({ 
-                  role: "user", 
-                  content: `Here are the tool results:\n${toolResultsText}\n\nPlease provide a friendly explanation of these results to the user.` 
-                });
-                
-                let explanationContent = '';
-                const explanationGenerator = AIProvider.streamChat((client as any).messages, {});
-                for await (const packet of explanationGenerator) {
-                  if (packet.content) {
-                    explanationContent += packet.content;
-                    client.send(JSON.stringify(packet));
-                  }
-                }
-                (client as any).messages.push({ role: "assistant", content: explanationContent });
-              } catch (err: any) {
-                client.send(JSON.stringify({
-                  ok: false,
-                  event: "ai.error",
-                  output: err?.message || String(err)
-                }));
-              }
-            })();
+            handleAIChat(client, AIProvider, moduleObjects, (client as any).messages);
           }
           break;
       }
