@@ -23,7 +23,7 @@ export type AIResponsePacket = {
 }
 
 export type AIProviderFunctions = {
-  streamChat: (messages: any[], options?: Record<string, any>) => AsyncGenerator<string>;
+  streamChat: (messages: any[], options?: Record<string, any>) => AsyncGenerator<AIResponsePacket>;
   chat: (messages: any[], options?: Record<string, any>) => Promise<string>;
   completions: (prompt: string, options?: Record<string, any>) => Promise<string>;
 }

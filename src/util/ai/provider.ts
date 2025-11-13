@@ -7,7 +7,7 @@ export function getAIProvider(provider: string): AIProviderFunctions {
       return new OpenAIProvider({
         apiKey: process.env.API_KEY || "",
         model: process.env.MODEL || "gpt-3.5-turbo",
-        temperature: Number(process.env.TEMPERATURE) || 0.7,
+        temperature: Number(process.env.TEMPERATURE) || 1,
         baseUrl: process.env.BASE_URL || undefined,
       });
     case "anthropic":

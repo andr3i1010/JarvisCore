@@ -70,5 +70,9 @@ export class AnthropicProvider {
         }
       }
     }
+    yield {
+      ok: true,
+      event: "ai.done"
+    };
   }
 }

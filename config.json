@@ -1,5 +1,6 @@
 {
   "modules": [
-    ""
+    "./modules/websearch/search.ts",
+    "./modules/websearch/site.ts"
   ]
 }

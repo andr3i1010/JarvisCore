@@ -39,7 +39,7 @@ export class OpenAIProvider {
       if (!reader) {
         throw new Error("Failed to get reader from response body");
       }
-      
+
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
@@ -56,10 +56,6 @@ export class OpenAIProvider {
             if (line.startsWith('data: ')) {
               const data = line.slice(6).trim();
               if (data === '[DONE]') {
-                yield {
-                  ok: true,
-                  event: 'ai.done'
-                };
                 return;
               }
               try {
@@ -70,7 +66,7 @@ export class OpenAIProvider {
                     ok: true,
                     event: 'ai.stream',
                     content
-                   };
+                  };
                 }
               } catch (e) {
                 yield {
@@ -82,6 +78,10 @@ export class OpenAIProvider {
             }
           }
         }
+        yield {
+          ok: true,
+          event: 'ai.done'
+        };
       }
     } catch (e) {
       yield {
