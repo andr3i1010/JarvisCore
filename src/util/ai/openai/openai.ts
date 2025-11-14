@@ -38,7 +38,6 @@ export class OpenAIProvider {
       messages,
       temperature: this.config.temperature || 1,
       stream: false,
-      reasoning_effort: 'medium'
     })
 
     return { ok: true, event: 'ai.complete', content: stream.choices[0]?.message?.content || '' };
