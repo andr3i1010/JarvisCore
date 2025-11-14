@@ -54,21 +54,6 @@ function detectToolCalls(text: string): Array<ToolCallRequest & { _raw: string; 
   return toolCalls;
 }
 
-function isToolCallLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes("\"cmd\"")) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    return Boolean(parsed.cmd && parsed.payload !== undefined);
-  } catch {
-    // If parse fails, still treat it as a potential start of a multi-line tool call
-    return true;
-  }
-}
-
 async function executeToolCall(toolCall: ToolCallRequest, modules: any[]): Promise<any> {
   const toolCmd = toolCall.cmd;
   const module = modules.find((m) => m.name === toolCmd);
