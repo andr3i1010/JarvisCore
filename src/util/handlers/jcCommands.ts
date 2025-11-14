@@ -1,15 +1,15 @@
 import type WebSocket from "ws";
-import { toolCallRequest, toolCallResponse } from "../../types";
+import { ToolCallRequest, ToolCallResponse } from "../../types";
 import { getStoreValue } from "../dataStore";
 import { log } from "../logger";
 const { spawn } = require('child_process');
 
-export default async function jcCommands(client: WebSocket, parsedData: toolCallRequest) {
+export default async function jcCommands(client: WebSocket, parsedData: ToolCallRequest) {
   const command = parsedData.cmd.split(".")[1];
 
   switch (command) {
     case "version":
-      const resPayload: toolCallResponse = {
+      const resPayload: ToolCallResponse = {
         ok: true,
         payload: {
           ver: "1",
@@ -34,7 +34,7 @@ export default async function jcCommands(client: WebSocket, parsedData: toolCall
         }, 500); // half a second is usually enough for self-hosted servers
 
       } else {
-        const resPayload: toolCallResponse = {
+        const resPayload: ToolCallResponse = {
           ok: false,
           output: "Access denied"
         };

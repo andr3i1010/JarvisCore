@@ -1,16 +1,29 @@
-import * as https from 'https';
 import * as cheerio from 'cheerio';
 import { ToolCallResponse } from '../../types';
+import { TTLCache } from '../../util/cache';
+
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const searchCache = new TTLCache<string, ToolCallResponse>(SEARCH_CACHE_TTL_MS);
 
 export const WebSearchModule = {
   name: "websearch.search",
-  description: "Search using DuckDuckGo",
+  description: "Search using DuckDuckGo. Recommended to keep queries concise, and use websearch.site on the provided sites to gain more context/knowledge.",
   payload: {
-    query: "The search query string. Would recommend in the result to also fetch the websites using your websearch.site tool."
+    query: "The search query string."
   },
   async execute(payload: { query: string }): Promise<ToolCallResponse> {
-    const query = payload.query;
-    const url = `https://html.duckduckgo.com/html?q=${encodeURIComponent(query)}`;
+    const rawQuery = payload.query?.trim();
+    if (!rawQuery) {
+      return { ok: false, output: "Query must be a non-empty string" };
+    }
+
+    const cacheKey = rawQuery.toLowerCase();
+    const cached = searchCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const url = `https://html.duckduckgo.com/html?q=${encodeURIComponent(rawQuery)}`;
 
     try {
       const controller = new AbortController();
@@ -37,7 +50,9 @@ export const WebSearchModule = {
         }
       });
 
-      return { ok: true, payload: { results } };
+      const responsePayload: ToolCallResponse = { ok: true, payload: { results } };
+      searchCache.set(cacheKey, responsePayload);
+      return responsePayload;
     } catch (error) {
       console.error('Error fetching or parsing search results:', error);
       return { ok: false, output: (error as Error).message };

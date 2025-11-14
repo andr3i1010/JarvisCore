@@ -1,77 +1,67 @@
-import WebSocket from 'ws';
-import * as readline from 'readline';
+import WebSocket from "ws";
+import * as readline from "readline";
 
-const ws = new WebSocket('ws://localhost:8080');
+const client = new WebSocket("ws://localhost:8080");
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout
+  output: process.stdout,
+  prompt: "> ",
 });
 
-let isConnected = false;
-let isWaitingForResponse = false;
-let promptShown = false;
-let responseBuffer = '';
+let waitingForResponse = false;
 
-ws.on('open', () => {
-  console.log('Connected to JarvisCore');
-  isConnected = true;
-  promptUser();
-});
-
-ws.on('message', (data) => {
-  const message = JSON.parse(data.toString());
-  if (message.content) {
-    responseBuffer += message.content;
-    process.stdout.write(message.content);
+const sendPrompt = (line: string) => {
+  const prompt = line.trim();
+  if (!prompt) {
+    rl.prompt();
+    return;
   }
-  // Show prompt when response is done (either from AI provider or server completion)
-  if ((message.event === 'ai.done' || message.event === 'done') && isWaitingForResponse && !promptShown) {
-    isWaitingForResponse = false;
-    promptShown = true;
-    responseBuffer = '';
-    process.stdout.write('\n> ');
+
+  if (prompt.toLowerCase() === "exit" || prompt.toLowerCase() === "quit") {
+    client.close();
+    return;
+  }
+
+  waitingForResponse = true;
+  client.send(JSON.stringify({ cmd: "ai.chat", prompt }));
+};
+
+client.on("open", () => {
+  console.log("Connected to server");
+  rl.prompt();
+});
+
+client.on("message", (data) => {
+  try {
+    const message = JSON.parse(data.toString());
+    if (message.content) {
+      process.stdout.write(message.content);
+    }
+    if ((message.event === "ai.done" || message.event === "done") && waitingForResponse) {
+      waitingForResponse = false;
+      process.stdout.write("\n");
+      rl.prompt();
+    }
+  } catch (err) {
+    console.error("Failed to parse server message", err);
   }
 });
 
-ws.on('close', () => {
-  console.log('\nDisconnected from server');
+client.on("close", () => {
+  console.log("\nDisconnected from server");
   rl.close();
-  process.exit(0);
 });
 
-ws.on('error', (err) => {
-  console.error('WebSocket error:', err);
+client.on("error", (err) => {
+  console.error("WebSocket error:", err);
   rl.close();
-  process.exit(1);
 });
 
-function promptUser() {
-  if (!isWaitingForResponse && isConnected) {
-    promptShown = false;
-    rl.question('> ', (line) => {
-      const userInput = line.trim();
-
-      if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
-        ws.close();
-        return;
-      }
-
-      if (!userInput) {
-        promptUser();
-        return;
-      }
-
-      isWaitingForResponse = true;
-      ws.send(JSON.stringify({
-        cmd: 'ai.chat',
-        prompt: userInput
-      }));
-    });
+rl.on("line", (line) => {
+  if (waitingForResponse) {
+    console.log("Still waiting for the previous response, please wait...");
+    rl.prompt();
+    return;
   }
-}
-
-rl.on('close', () => {
-  if (isConnected) {
-    ws.close();
-  }
+  sendPrompt(line);
 });

@@ -1,4 +1,8 @@
 import { ToolCallResponse } from '../../types';
+import { TTLCache } from '../../util/cache';
+
+const SITE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const siteCache = new TTLCache<string, ToolCallResponse>(SITE_CACHE_TTL_MS);
 
 export const WebSiteModule = {
   name: "websearch.site",
@@ -7,7 +11,18 @@ export const WebSiteModule = {
     url: "The URL to fetch content from"
   },
   async execute(payload: { url: string }): Promise<ToolCallResponse> {
-    const url = payload.url;
+    const rawUrl = payload.url?.trim();
+    if (!rawUrl) {
+      return { ok: false, output: "URL must be a non-empty string" };
+    }
+
+    const cacheKey = rawUrl.toLowerCase();
+    const cached = siteCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const url = rawUrl;
 
     try {
       const controller = new AbortController();
@@ -21,8 +36,10 @@ export const WebSiteModule = {
       clearTimeout(timeoutId);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const content = await response.text();
+      const responsePayload: ToolCallResponse = { ok: true, payload: { content } };
+      siteCache.set(cacheKey, responsePayload);
 
-      return { ok: true, payload: { content } };
+      return responsePayload;
     } catch (error) {
       console.error('Error fetching site content:', error);
       return { ok: false, output: (error as Error).message };
