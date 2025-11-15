@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
 import { log } from "./logger";
+import type { ModuleObject } from "../types";
 
 async function loadURLModule(url: string): Promise<any> {
   try {
@@ -33,9 +34,9 @@ async function loadURLModule(url: string): Promise<any> {
   }
 }
 
-export async function loadModulesFromConfig(configPath: string): Promise<any[]> {
+export async function loadModulesFromConfig(configPath: string): Promise<ModuleObject[]> {
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const moduleObjects: any[] = [];
+  const moduleObjects: ModuleObject[] = [];
 
   for (const modulePath of config.modules) {
     try {
@@ -43,14 +44,18 @@ export async function loadModulesFromConfig(configPath: string): Promise<any[]> 
       if (modulePath.startsWith("http://") || modulePath.startsWith("https://")) {
         moduleObj = await loadURLModule(modulePath);
       } else {
-        // Resolve module path relative to project root (two levels up from this util file)
         const projectRoot = path.resolve(__dirname, "../..");
         const resolvedPath = path.resolve(projectRoot, modulePath);
         const mod = await import(pathToFileURL(resolvedPath).href);
         moduleObj = Object.values(mod)[0] as any;
       }
 
-      moduleObjects.push(moduleObj);
+      if (!moduleObj || typeof moduleObj.name !== "string" || typeof moduleObj.execute !== "function") {
+        log("error", `Skipping invalid module at ${modulePath}. Expected { name: string, execute: function }`);
+        continue;
+      }
+
+      moduleObjects.push(moduleObj as ModuleObject);
       log("info", `Loaded module: ${moduleObj.name}`);
     } catch (err) {
       log("error", `Failed to load module ${modulePath}: ${err}`);

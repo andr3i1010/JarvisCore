@@ -27,3 +27,9 @@ export type AIProviderFunctions = {
   chat: (messages: any[], options?: Record<string, any>) => Promise<string>;
   completions: (prompt: string, options?: Record<string, any>) => Promise<string>;
 }
+
+export type ModuleObject = {
+  name: string;
+  payload?: Record<string, any>;
+  execute: (payload: Record<string, any>) => Promise<any>;
+}

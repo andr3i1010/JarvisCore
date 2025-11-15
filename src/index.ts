@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import WebSocket, { WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
 import { log } from "./util/logger";
 import jcCoreCommands from "./util/handlers/jcCommands";
 import { setStoreValue, getStoreValue } from "./util/dataStore";
@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import { getAIProvider } from "./util/ai/provider";
 import { handleAIChat } from "./util/aiChat";
 import { loadModulesFromConfig } from "./util/moduleLoader";
+import type { ModuleObject } from "./types";
 
 export default async function main() {
   const commit = execSync('git rev-parse --short HEAD').toString().trim();
@@ -60,7 +61,7 @@ export default async function main() {
 
   const modulePrompts: string[] = [];
   for (const mod of moduleObjects) {
-    const name = mod.name; // use full module name (e.g., "websearch.site")
+    const name = mod.name;
     const params = mod.payload || {};
     const paramsString = Object.entries(params)
       .map(([key, value], idx) => `${idx === 0 ? '' : '  '}${key}: ${value}`)
@@ -77,31 +78,60 @@ passToClient: false`;
   const systemContent = mainSystemPrompt + '\n\n' + modulePrompts.join('\n\n');
   setStoreValue("system_prompt", systemContent);
 
-  sock.on("connection", (client: WebSocket) => {
+  sock.on("connection", (client: any) => {
     const systemContent = getStoreValue("system_prompt") as string;
-    (client as any).messages = [{ role: "system", content: systemContent }];
-    client.on("message", (data) => {
-      const parsedData = JSON.parse(data.toString());
-      switch (parsedData.cmd.split(".")[0]) {
-        case "jc":
-          jcCoreCommands(client, parsedData);
-          break;
-        case "ai":
-          if (parsedData.cmd.split(".")[1] === "chat") {
-            const prompt = parsedData.prompt;
-            if (!prompt || typeof prompt !== "string") {
-              client.send(JSON.stringify({
-                ok: false,
-                event: "ai.error",
-                output: "No valid prompt provided"
-              }));
-              return;
-            }
-            (client as any).messages.push({ role: "user", content: prompt });
-            handleAIChat(client, AIProvider, moduleObjects, (client as any).messages);
-          }
-          break;
+    client.messages = [{ role: "system", content: systemContent }];
+
+    // make the message handler async so we can await module execution
+    client.on("message", async (data: any) => {
+      let parsedData: any;
+      try {
+        parsedData = JSON.parse(data.toString());
+      } catch (err) {
+        client.send(JSON.stringify({ ok: false, event: "error", output: "Invalid JSON in message" }));
+        return;
       }
+
+      if (!parsedData || typeof parsedData !== "object" || typeof parsedData.cmd !== "string") {
+        client.send(JSON.stringify({ ok: false, event: "error", output: "Invalid command format. Expected { cmd: string, ... }" }));
+        return;
+      }
+
+      const parts = parsedData.cmd.split(".");
+      if (parts.length < 2) {
+        client.send(JSON.stringify({ ok: false, event: "error", output: "Invalid command name. Expected format '<namespace>.<action>'" }));
+        return;
+      }
+      const namespace = parts[0];
+
+      if (namespace === "jc") {
+        jcCoreCommands(client, parsedData);
+        return;
+      }
+
+      if (namespace === "ai") {
+        if (parts[1] === "chat") {
+          const prompt = parsedData.prompt;
+          if (!prompt || typeof prompt !== "string") {
+            client.send(JSON.stringify({ ok: false, event: "ai.error", output: "No valid prompt provided" }));
+            return;
+          }
+          client.messages = client.messages || [];
+          client.messages.push({ role: "user", content: prompt });
+          handleAIChat(client as any, AIProvider, moduleObjects as ModuleObject[], client.messages);
+          return;
+        }
+      }
+
+      client.send(
+        JSON.stringify({
+          ok: false,
+          event: "error",
+          output:
+            "Direct tool/module invocation is reserved for the AI. Clients may only call 'jc' commands or 'ai.chat'.",
+        })
+      );
+      return;
     });
   });
 }

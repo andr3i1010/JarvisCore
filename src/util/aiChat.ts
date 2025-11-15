@@ -1,9 +1,8 @@
 import WebSocket from "ws";
 import { log } from "./logger";
-import { ToolCallRequest } from "../types";
+import type { ToolCallRequest, ModuleObject } from "../types";
 
 function detectToolCalls(text: string): Array<ToolCallRequest & { _raw: string; _start: number; _end: number }> {
-  // Extract JSON objects from arbitrary text (supports multi-line JSON)
   const toolCalls: Array<ToolCallRequest & { _raw: string; _start: number; _end: number }> = [];
 
   const len = text.length;
@@ -39,9 +38,7 @@ function detectToolCalls(text: string): Array<ToolCallRequest & { _raw: string; 
               if (parsed && parsed.cmd && parsed.payload !== undefined) {
                 toolCalls.push({ ...(parsed as ToolCallRequest), _raw: candidate, _start: i, _end: j + 1 });
               }
-            } catch {
-              // ignore invalid JSON
-            }
+            } catch { }
             i = j;
             break;
           }
@@ -54,19 +51,43 @@ function detectToolCalls(text: string): Array<ToolCallRequest & { _raw: string; 
   return toolCalls;
 }
 
-async function executeToolCall(toolCall: ToolCallRequest, modules: any[]): Promise<any> {
+async function executeToolCall(toolCall: ToolCallRequest, modules: ModuleObject[]): Promise<any> {
   const toolCmd = toolCall.cmd;
-  const module = modules.find((m) => m.name === toolCmd);
+  const mod = modules.find((m) => m.name === toolCmd);
+  if (!mod) throw new Error(`Module not found: ${toolCmd}`);
+  if (typeof mod.execute !== "function") throw new Error(`Module ${toolCmd} has no execute method`);
+  return mod.execute(toolCall.payload);
+}
 
-  if (!module) {
-    throw new Error(`Module not found: ${toolCmd}. Make sure to call the module by its full name (e.g. "websearch.site").`);
+function isTrailingOnlyWhitespaceOrFences(s: string) {
+  return s.trim().length === 0 || /^[`~\s]*$/.test(s);
+}
+
+function isToolCallAtEnd(fullContent: string, tc: { _end: number }) {
+  try {
+    const endPos = (tc as any)._end;
+    if (typeof endPos !== "number") return false;
+    const trailing = fullContent.slice(endPos);
+    return isTrailingOnlyWhitespaceOrFences(trailing);
+  } catch {
+    return false;
   }
-  if (typeof module.execute !== "function") {
-    throw new Error(
-      `No execute method in module: ${module?.name || toolCall.cmd}`
-    );
+}
+
+function stripTrailingToolCallFrom(buffer: string, fullContent: string, detectedCalls: Array<{ _raw: string; _end: number; passToClient?: boolean }>) {
+  // If a server-executable tool call appears at the very end of fullContent,
+  // remove its raw JSON from the provided buffer (which may be just the
+  // portion not yet sent to the client) so we don't send the tool payload.
+  const toolCallAtEnd = detectedCalls.find((tc) => !tc.passToClient && isToolCallAtEnd(fullContent, tc));
+  if (!toolCallAtEnd) return buffer;
+  const raw = (toolCallAtEnd as any)._raw || "";
+  if (!raw) return buffer;
+  // Remove the last occurrence of raw from buffer, if present.
+  const idx = buffer.lastIndexOf(raw);
+  if (idx !== -1) {
+    return buffer.slice(0, idx) + buffer.slice(idx + raw.length);
   }
-  return module.execute(toolCall.payload);
+  return buffer;
 }
 
 export async function handleAIChat(
@@ -88,31 +109,33 @@ export async function handleAIChat(
         while (newlineIndex !== -1) {
           const line = lineBuffer.slice(0, newlineIndex + 1);
           lineBuffer = lineBuffer.slice(newlineIndex + 1);
-          // Stream partial assistant content to client (do not filter tool call JSON)
-          if (line.trim()) {
-            client.send(JSON.stringify({ ok: true, event: "ai.stream", content: line }));
-          }
+          // Stream partial assistant content to client. We'll avoid sending
+          // any final tool-call JSON body to the client, but during the
+          // incremental stream we can't always be sure a JSON at the end
+          // will remain final until the generator completes — so we filter
+          // the trailing JSON right after the generator finishes below.
+          if (line.trim()) client.send(JSON.stringify({ ok: true, event: "ai.stream", content: line }));
           newlineIndex = lineBuffer.indexOf("\n");
         }
       }
     }
+    const detectedCalls = detectToolCalls(fullContent);
 
     if (lineBuffer.trim()) {
-      client.send(JSON.stringify({ ok: true, event: "ai.stream", content: lineBuffer }));
+      const finalBufferToSend = stripTrailingToolCallFrom(lineBuffer, fullContent, detectedCalls);
+      if (finalBufferToSend.trim()) client.send(JSON.stringify({ ok: true, event: "ai.stream", content: finalBufferToSend }));
     }
-
-    const detectedCalls = detectToolCalls(fullContent);
     if (detectedCalls.length === 0) {
       messages.push({ role: "assistant", content: fullContent });
       client.send(JSON.stringify({ ok: true, event: "ai.done" }));
       return;
     }
 
-    const toolCallAtEnd = detectedCalls.find((tc) =>
-      fullContent.trim().endsWith(JSON.stringify(tc).trim())
-    );
+    const toolCallAtEnd = detectedCalls.find((tc) => isToolCallAtEnd(fullContent, tc));
 
     if (!toolCallAtEnd) {
+      // Tool call not at the very end of the assistant content — treat as
+      // normal assistant output.
       messages.push({ role: "assistant", content: fullContent });
       client.send(JSON.stringify({ ok: true, event: "ai.done" }));
       return;
@@ -120,48 +143,45 @@ export async function handleAIChat(
 
     const userFacingContent = fullContent;
 
-    const toolResults = await Promise.allSettled(
-      detectedCalls
-        .filter((tc) => !tc.passToClient)
-        .map(async (tc) => {
-          try {
-            // Notify client that we're about to execute this tool on the server
-            try {
-              if ((client as any).readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ event: "ai.tool", tool: tc.cmd }));
-              }
-            } catch (sendErr) {
-              // ignore send errors — tool execution should continue
-            }
+    // Calls that should be executed on the server
+    const serverExecutable = detectedCalls.filter((tc) => !tc.passToClient);
 
-            const result = await executeToolCall(tc, modules);
-            log(
-              "info",
-              `Tool execution result for ${tc.cmd}: ${JSON.stringify(result)}`
-            );
-            return { cmd: tc.cmd, result, error: null };
-          } catch (err: any) {
-            log(
-              "error",
-              `Tool execution failed for ${tc.cmd}: ${err.message}`
-            );
-            return { cmd: tc.cmd, result: null, error: err.message };
+    if (serverExecutable.length === 0) {
+      // Nothing for the server to run; pass-through the assistant content
+      messages.push({ role: "assistant", content: userFacingContent });
+      client.send(JSON.stringify({ ok: true, event: "ai.done" }));
+      return;
+    }
+
+    const toolResults = await Promise.all(
+      serverExecutable.map(async (tc) => {
+        try {
+          // Notify client that we're about to execute this tool on the server
+          try {
+            if ((client as any).readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ ok: true, event: "ai.tool", tool: tc.cmd }));
+            }
+          } catch {
+            // ignore send errors — continue to execute the tool
           }
-        })
+
+          const result = await executeToolCall(tc, modules);
+          log("info", `Tool execution result for ${tc.cmd}: ${JSON.stringify(result)}`);
+          return { cmd: tc.cmd, result, error: null };
+        } catch (err: any) {
+          log("error", `Tool execution failed for ${tc.cmd}: ${err?.message || String(err)}`);
+          return { cmd: tc.cmd, result: null, error: err?.message || String(err) };
+        }
+      })
     );
 
-    const results = toolResults
-      .filter((r) => r.status === "fulfilled")
-      .map((r) => (r as PromiseFulfilledResult<any>).value);
+    if (!toolResults || toolResults.length === 0) {
+      client.send(JSON.stringify({ ok: true, event: "ai.done" }));
+      return;
+    }
 
-    if (results.length === 0) return;
-
-    const toolResultsText = results
-      .map((r) =>
-        r.error
-          ? `${r.cmd} failed: ${r.error}`
-          : `${r.cmd} result: ${JSON.stringify(r.result)}`
-      )
+    const toolResultsText = toolResults
+      .map((r) => (r.error ? `${r.cmd} failed: ${r.error}` : `${r.cmd} result: ${JSON.stringify(r.result)}`))
       .join("\n");
 
     messages.push({ role: "assistant", content: userFacingContent });

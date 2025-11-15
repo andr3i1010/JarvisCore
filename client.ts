@@ -1,9 +1,11 @@
+import { log } from "./src/util/logger";
+
 const socket = new WebSocket("ws://localhost:8080")
 
 // Only send after connection is established to avoid "Sent before connected" DOMException
 socket.addEventListener('open', () => {
-  console.log('WebSocket connected')
-  socket.send(JSON.stringify({ cmd: "ai.chat", prompt: "Hello, AI!" }))
+  log('info', 'WebSocket connected')
+  socket.send(JSON.stringify({ cmd: "ai.chat", prompt: "Look up for me, what is PolarLearn?" }))
 })
 
 socket.addEventListener('message', (message) => {
@@ -13,15 +15,15 @@ socket.addEventListener('message', (message) => {
       process.stdout.write(data.content)
     }
   } catch (err) {
-    console.warn('Failed to parse incoming message:', err)
-    console.log('Raw message:', message.data)
+    log('warn', 'Failed to parse incoming message:', { err: String(err) })
+    log('debug', `Raw message: ${message.data}`)
   }
 })
 
 socket.addEventListener('error', (err) => {
-  console.error('WebSocket error:', err)
+  log('error', `WebSocket error: ${String(err)}`)
 })
 
 socket.addEventListener('close', (ev) => {
-  console.log('WebSocket closed', ev.code, ev.reason)
+  log('info', `WebSocket closed ${ev.code} ${ev.reason}`)
 })
