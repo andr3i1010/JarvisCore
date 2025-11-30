@@ -124,5 +124,5 @@ function sendError(res: http.ServerResponse, status: number, message: string): v
   try {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: message }));
-  } catch {}
+  } catch { }
 }
