@@ -1,7 +1,9 @@
 import http from "http";
 import url from "url";
 import { log } from "../util/logger";
-import type { AIProviderFunctions } from "../types";
+import { getStoreValue } from "../util/dataStore";
+import { processAIStreamWithTools } from "../util/toolExecutor";
+import type { AIProviderFunctions, ModuleObject } from "../types";
 
 interface OpenAICompatConfig {
   port: number;
@@ -58,6 +60,13 @@ async function handleListModels(res: http.ServerResponse): Promise<void> {
 
 async function handleChatCompletions(res: http.ServerResponse, json: any, ai: AIProviderFunctions): Promise<void> {
   const { messages = [], model, stream } = json;
+  const modules = (getStoreValue("modules") as ModuleObject[]) || [];
+  const systemPrompt = getStoreValue("system_prompt") as string;
+
+  // Prepend system prompt if not already present
+  const messagesWithSystem = messages[0]?.role === "system"
+    ? messages
+    : [{ role: "system", content: systemPrompt }, ...messages];
 
   if (stream) {
     res.writeHead(200, {
@@ -67,12 +76,12 @@ async function handleChatCompletions(res: http.ServerResponse, json: any, ai: AI
     });
 
     try {
-      for await (const packet of ai.streamChat(messages)) {
-        if (packet.content) {
-          const payload = { choices: [{ delta: { content: packet.content } }] };
+      await processAIStreamWithTools(ai, modules, [...messagesWithSystem], {
+        onContent: (content) => {
+          const payload = { choices: [{ delta: { content } }] };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        }
-      }
+        },
+      });
       res.write("data: [DONE]\n\n");
     } catch (err: any) {
       res.write(`data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`);
@@ -82,14 +91,17 @@ async function handleChatCompletions(res: http.ServerResponse, json: any, ai: AI
   }
 
   try {
-    const reply = await ai.chat(messages);
-    const content = typeof reply === "object" ? (reply as any).content : String(reply || "");
+    let fullContent = "";
+    await processAIStreamWithTools(ai, modules, [...messagesWithSystem], {
+      onContent: (content) => { fullContent += content; },
+    });
+
     sendJson(res, 200, {
       id: `jc-${Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
       model: model || process.env.MODEL || "gpt-5",
-      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+      choices: [{ index: 0, message: { role: "assistant", content: fullContent }, finish_reason: "stop" }],
     });
   } catch (err: any) {
     sendError(res, 500, err?.message || String(err));
