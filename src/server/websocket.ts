@@ -11,8 +11,8 @@ interface WebSocketConfig {
 }
 
 export function startWebSocketServer({ port, aiProvider, modules }: WebSocketConfig): WebSocketServer {
-  const wss = new WebSocketServer({ port });
-  log("info", `WebSocket server started on port ${port}`);
+  const wss = new WebSocketServer({ port, host: "0.0.0.0" });
+  log("info", `WebSocket server started on 0.0.0.0:${port}`);
 
   wss.on("connection", (client: WebSocket & { messages?: any[] }) => {
     const systemContent = getStoreValue("system_prompt") as string;

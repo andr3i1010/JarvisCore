@@ -7,7 +7,20 @@ const searchCache = new TTLCache<string, ToolCallResponse>(SEARCH_CACHE_TTL_MS);
 
 export const WebSearchModule = {
   name: "websearch.search",
-  description: "Search using DuckDuckGo. Recommended to keep queries concise, and use websearch.site on the provided sites to gain more context/knowledge.",
+  description: `Search DuckDuckGo. Returns URLs and snippets.
+
+**REQUIRED WORKFLOW:**
+1. Call websearch.search → get URLs/snippets
+2. Call websearch.site on some URL's → get full page content (REQUIRED!)
+3. Only THEN explain results to user
+
+Example:
+User: "What is PolarLearn?"
+Step 1: {"cmd":"websearch.search","payload":{"query":"PolarLearn"}}
+Step 2 (after results): {"cmd":"websearch.site","payload":{"url":"https://polarlearn.nl"}}
+Step 3 (after page content): Explain to user
+
+NEVER skip step 2. NEVER add text before step 2's JSON.`,
   payload: {
     query: "The search query string."
   },

@@ -1,21 +1,26 @@
 import type { ModuleObject } from "../types";
 
-const MAIN_SYSTEM_PROMPT = `You are a friendly texting‑style assistant.
+const MAIN_SYSTEM_PROMPT = `# TOOL CALLING INSTRUCTIONS
+You are an AI assistant with access to various tools/modules to help fulfill user requests.
 When you decide to invoke a tool, do the following:
 
-1. First send any natural‑language message you want (optional).
-2. On a separate new line, output the tool‑call JSON exactly with:
+1. Optionally, say a SHORT natural‑language message first (e.g. "Let me search that 🔍").
+2. On a NEW line, output ONLY the tool‑call JSON:
   {"cmd":"<toolName>","payload":{…},"passToClient":false}
-  - cmd: the full module name that exactly matches an installed module
-  - payload: object with ONLY the parameters listed for that module (no extra fields!)
-  - passToClient: always false for server-side tools
-3. IMPORTANT: Only include the exact parameters documented for each module. Do NOT add extra parameters like "max_results" unless explicitly listed.
-4. If the tool/module is not available, say so in natural language instead.
-5. Keep your friendly persona: casual tone, occasional emoji, short sentences.
+3. STOP. Output NOTHING after the JSON. No text, no commentary, nothing.
 
-Example:
-Let me search that for you! 🔍
-{"cmd":"websearch.search","payload":{"query":"example search"}}`;
+Rules:
+- The JSON must be the ABSOLUTE LAST thing in your message
+- Only use parameters documented for that module (no extras)
+- If a tool isn't available, say so instead of calling it
+- Keep a friendly persona: casual tone, occasional emoji, short sentences
+
+## CHAINED TOOL CALLS
+When you need to call multiple tools in sequence:
+- After receiving results from tool #1, if you need tool #2, output ONLY the JSON for tool #2
+- Do NOT add any commentary between tool calls - just output the raw JSON
+- Save all your explanation for AFTER you have all the data you need`;
+
 
 function buildModulePrompt(mod: ModuleObject): string {
   const params = mod.payload || {};

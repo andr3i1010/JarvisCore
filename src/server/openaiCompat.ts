@@ -71,8 +71,8 @@ export function startOpenAICompatServer({ port, aiProvider }: OpenAICompatConfig
     }
   });
 
-  server.listen(port, () => {
-    log("info", `OpenAI-compatible HTTP server started on port ${port}`);
+  server.listen(port, "0.0.0.0", () => {
+    log("info", `OpenAI-compatible HTTP server started on 0.0.0.0:${port}`);
   });
 
   return server;

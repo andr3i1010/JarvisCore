@@ -6,9 +6,9 @@ const siteCache = new TTLCache<string, ToolCallResponse>(SITE_CACHE_TTL_MS);
 
 export const WebSiteModule = {
   name: "websearch.site",
-  description: "Fetch content from a URL",
+  description: "Fetch full content from a URL. Use https:// prefix. MUST be called after websearch.search to get actual page content - do not skip this step! Output ONLY the JSON, no text before it.",
   payload: {
-    url: "The URL to fetch content from"
+    url: "The full URL to fetch (e.g. https://example.com)"
   },
   async execute(payload: { url: string }): Promise<ToolCallResponse> {
     const rawUrl = payload.url?.trim();

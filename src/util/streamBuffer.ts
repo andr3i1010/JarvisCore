@@ -1,18 +1,21 @@
 import { looksLikeToolCall } from "./toolParser";
+import { log } from "./logger";
 
 export interface LineBuffer {
   buffer: string;
   fullContent: string;
   toolCallDetected: boolean;
   contentBeforeToolCall: string;
+  pendingToolLine: string | null;
 }
 
 export function createLineBuffer(): LineBuffer {
-  return { buffer: "", fullContent: "", toolCallDetected: false, contentBeforeToolCall: "" };
+  return { buffer: "", fullContent: "", toolCallDetected: false, contentBeforeToolCall: "", pendingToolLine: null };
 }
 
 /**
- * Process chunk, returning lines safe to emit. Stops output when tool call detected.
+ * Process chunk, returning lines safe to emit.
+ * Only marks tool call as detected if it ends up being the last line.
  */
 export function processChunk(
   state: LineBuffer,
@@ -29,13 +32,19 @@ export function processChunk(
     const line = state.buffer.slice(0, idx + 1);
     state.buffer = state.buffer.slice(idx + 1);
 
-    if (looksLikeToolCall(line)) {
-      state.toolCallDetected = true;
-      state.contentBeforeToolCall = state.fullContent.slice(0, state.fullContent.indexOf(line.trim()));
-      return { lines, state };
+    // If we had a pending tool line, it wasn't the last line, so emit it
+    if (state.pendingToolLine !== null) {
+      if (state.pendingToolLine.trim()) lines.push(state.pendingToolLine);
+      state.pendingToolLine = null;
     }
 
-    if (line.trim()) lines.push(line);
+    if (looksLikeToolCall(line)) {
+      // Don't emit yet - hold it as pending to see if more content follows
+      state.pendingToolLine = line;
+    } else if (line.trim()) {
+      lines.push(line);
+    }
+
     idx = state.buffer.indexOf("\n");
   }
 
@@ -43,10 +52,33 @@ export function processChunk(
 }
 
 /**
- * Flush remaining buffer, suppressing tool calls.
+ * Flush remaining buffer. If the last content is a tool call, mark it as detected.
  */
 export function flushBuffer(state: LineBuffer): string | null {
-  if (state.toolCallDetected || !state.buffer.trim()) return null;
-  if (looksLikeToolCall(state.buffer)) return null;
+  if (state.toolCallDetected) return null;
+
+  // Check if pending tool line or remaining buffer is a tool call at the end
+  const remaining = state.pendingToolLine || state.buffer;
+
+  log("debug", `flushBuffer: pendingToolLine=${JSON.stringify(state.pendingToolLine)}, buffer=${JSON.stringify(state.buffer)}`);
+  log("debug", `flushBuffer: remaining=${JSON.stringify(remaining)}, looksLikeToolCall=${looksLikeToolCall(remaining || "")}`);
+
+  if (remaining && looksLikeToolCall(remaining)) {
+    // This is a tool call at the very end - mark as detected, don't emit
+    state.toolCallDetected = true;
+    state.contentBeforeToolCall = state.fullContent.slice(0, state.fullContent.lastIndexOf(remaining.trim()));
+    log("debug", `flushBuffer: detected tool call at end`);
+    return null;
+  }
+
+  // Emit any pending tool line that wasn't actually at the end (more content followed)
+  if (state.pendingToolLine !== null) {
+    const pending = state.pendingToolLine;
+    state.pendingToolLine = null;
+    const bufferContent = state.buffer.trim() ? state.buffer : "";
+    return (pending + bufferContent).trim() || null;
+  }
+
+  if (!state.buffer.trim()) return null;
   return state.buffer;
 }

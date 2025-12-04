@@ -9,6 +9,7 @@ export type DetectedToolCall = ToolCallRequest & {
 /**
  * Parse and extract tool call JSON objects from text content.
  * Handles nested braces and string escaping properly.
+ * Only returns tool calls that are on the last line or are the only content.
  */
 export function detectToolCalls(text: string): DetectedToolCall[] {
   const toolCalls: DetectedToolCall[] = [];
@@ -44,7 +45,25 @@ export function detectToolCalls(text: string): DetectedToolCall[] {
     }
     i++;
   }
-  return toolCalls;
+
+  // Filter: only keep tool calls on the last line or if they are the only content
+  return toolCalls.filter(tc => isToolCallOnLastLineOrOnly(text, tc));
+}
+
+/**
+ * Check if a tool call is on the last line or is the only content.
+ */
+function isToolCallOnLastLineOrOnly(text: string, tc: DetectedToolCall): boolean {
+  const trimmed = text.trim();
+  const rawTrimmed = tc._raw.trim();
+
+  // If the tool call IS the entire content (only thing)
+  if (trimmed === rawTrimmed) return true;
+
+  // Check if it's on the last line
+  const afterToolCall = text.slice(tc._end).trim();
+  // Nothing meaningful after the tool call means it's at the end
+  return afterToolCall === "";
 }
 
 /**
