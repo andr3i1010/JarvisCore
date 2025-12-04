@@ -30,6 +30,7 @@ export type AIProviderFunctions = {
 
 export type ModuleObject = {
   name: string;
+  description?: string;
   payload?: Record<string, any>;
   execute: (payload: Record<string, any>) => Promise<any>;
 }

@@ -5,38 +5,31 @@ When you decide to invoke a tool, do the following:
 
 1. First send any natural‑language message you want (optional).
 2. On a separate new line, output the tool‑call JSON exactly with:
-  {"cmd":"<toolName>","payload":{…},"passToClient":<true|false>}
-  - cmd: the full module name that exactly matches an installed module (for example: "websearch.site", "time.setalarm").
-  - payload: object with parameters for the tool
-  - passToClient: include only if the client (not server) must execute
-3. The \`cmd\` field MUST be the full module name (include the dot and full suffix). Do NOT use short prefixes or bare module names (for example, do NOT use "websearch"; use "websearch.site"). The server will reject non-exact names.
-4. If the tool/module is not available, respond only in natural language saying:
-  "The <moduleName> module does not seem to be installed."
-  (Do not output a JSON in this case.)
-5. Keep your friendly persona: casual tone, occasional emoji, short sentences. When invoking a tool, your JSON must stand alone on its own line after any natural text.
+  {"cmd":"<toolName>","payload":{…},"passToClient":false}
+  - cmd: the full module name that exactly matches an installed module
+  - payload: object with ONLY the parameters listed for that module (no extra fields!)
+  - passToClient: always false for server-side tools
+3. IMPORTANT: Only include the exact parameters documented for each module. Do NOT add extra parameters like "max_results" unless explicitly listed.
+4. If the tool/module is not available, say so in natural language instead.
+5. Keep your friendly persona: casual tone, occasional emoji, short sentences.
 
 Example:
-Okay, I'll fetch that site for you.
-{"cmd":"websearch.site","payload":{"url":"https://example.com"}}
-
-If the module were missing:
-The websearch.site module does not seem to be installed.`;
-
-function formatModuleParams(params: Record<string, any>): string {
-  return Object.entries(params)
-    .map(([key, value], idx) => `${idx === 0 ? "" : "  "}${key}: ${value}`)
-    .join("\n");
-}
+Let me search that for you! 🔍
+{"cmd":"websearch.search","payload":{"query":"example search"}}`;
 
 function buildModulePrompt(mod: ModuleObject): string {
-  const paramsString = formatModuleParams(mod.payload || {});
-  return `${mod.name} module: Can be called by using the main tool call structure. Make sure to customize the parameters as following: 
-cmd: ${mod.name}
-payload:\n  ${paramsString}
-passToClient: false`;
+  const params = mod.payload || {};
+  const paramLines = Object.entries(params)
+    .map(([key, desc]) => `    "${key}": ${desc}`)
+    .join("\n");
+
+  return `**${mod.name}**
+  ${mod.description || ""}
+  Parameters (use ONLY these):
+${paramLines}`;
 }
 
 export function buildSystemPrompt(modules: ModuleObject[]): string {
   const modulePrompts = modules.map(buildModulePrompt);
-  return MAIN_SYSTEM_PROMPT + "\n\n" + modulePrompts.join("\n\n");
+  return MAIN_SYSTEM_PROMPT + "\n\nAvailable modules:\n\n" + modulePrompts.join("\n\n");
 }
