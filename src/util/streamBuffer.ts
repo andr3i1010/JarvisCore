@@ -7,10 +7,18 @@ export interface LineBuffer {
   toolCallDetected: boolean;
   contentBeforeToolCall: string;
   pendingToolLine: string | null;
+  inCodeBlock: boolean;
 }
 
 export function createLineBuffer(): LineBuffer {
-  return { buffer: "", fullContent: "", toolCallDetected: false, contentBeforeToolCall: "", pendingToolLine: null };
+  return {
+    buffer: "",
+    fullContent: "",
+    toolCallDetected: false,
+    contentBeforeToolCall: "",
+    pendingToolLine: null,
+    inCodeBlock: false
+  };
 }
 
 /**
@@ -21,8 +29,8 @@ export function processChunk(
   state: LineBuffer,
   chunk: string
 ): { lines: string[]; state: LineBuffer } {
-  state.fullContent += chunk;
   if (state.toolCallDetected) return { lines: [], state };
+  state.fullContent += chunk;
 
   state.buffer += chunk;
   const lines: string[] = [];
@@ -32,15 +40,22 @@ export function processChunk(
     const line = state.buffer.slice(0, idx + 1);
     state.buffer = state.buffer.slice(idx + 1);
 
+    if (line.trim().startsWith("```")) {
+      state.inCodeBlock = !state.inCodeBlock;
+    }
+
     // If we had a pending tool line, it wasn't the last line, so emit it
     if (state.pendingToolLine !== null) {
       if (state.pendingToolLine.trim()) lines.push(state.pendingToolLine);
       state.pendingToolLine = null;
     }
 
-    if (looksLikeToolCall(line)) {
-      // Don't emit yet - hold it as pending to see if more content follows
-      state.pendingToolLine = line;
+    if (!state.inCodeBlock && looksLikeToolCall(line)) {
+      // Detected tool call - stop processing immediately
+      state.toolCallDetected = true;
+      state.fullContent = state.fullContent.slice(0, state.fullContent.length - state.buffer.length);
+      state.contentBeforeToolCall = state.fullContent.slice(0, state.fullContent.length - line.length);
+      return { lines, state };
     } else if (line.trim()) {
       lines.push(line);
     }

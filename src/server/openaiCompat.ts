@@ -121,7 +121,7 @@ async function handleHealth(res: http.ServerResponse): Promise<void> {
 }
 
 async function handleListModels(res: http.ServerResponse): Promise<void> {
-  const modelName = process.env.MODEL + "-jarviscore" || "gpt-5";
+  const modelName = (process.env.MODEL || "gpt-5") + '-jarviscore';
   sendJson(res, 200, { object: "list", data: [{ id: modelName, object: "model" }] });
 }
 
@@ -130,6 +130,7 @@ async function handleChatCompletions(res: http.ServerResponse, json: any, ai: AI
   const modules = (getStoreValue("modules") as ModuleObject[]) || [];
   const systemPrompt = getStoreValue("system_prompt") as string;
 
+  // Always use server's system prompt (with tool instructions), append client's system if present
   const clientSystemContent = messages[0]?.role === "system" ? messages[0].content : "";
   const combinedSystem = clientSystemContent
     ? `${systemPrompt}\n\nAdditional instructions from client:\n${clientSystemContent}`
