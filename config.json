@@ -1,6 +1,7 @@
 {
   "modules": [
     "./src/modules/websearch/search.ts",
-    "./src/modules/websearch/site.ts"
+    "./src/modules/websearch/site.ts",
+    "./src/modules/weather/weather.ts"
   ]
 }

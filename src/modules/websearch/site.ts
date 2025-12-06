@@ -1,3 +1,4 @@
+import * as cheerio from 'cheerio';
 import { ToolCallResponse } from '../../types';
 import { TTLCache } from '../../util/cache';
 
@@ -35,8 +36,15 @@ export const WebSiteModule = {
       });
       clearTimeout(timeoutId);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const content = await response.text();
-      const responsePayload: ToolCallResponse = { ok: true, payload: { content } };
+      const html = await response.text();
+      const $ = cheerio.load(html);
+
+      $('script, style, noscript').remove();
+      const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+      const title = $('head > title').text().trim();
+
+      const content = bodyText || html;
+      const responsePayload: ToolCallResponse = { ok: true, payload: { content, title, html } };
       siteCache.set(cacheKey, responsePayload);
 
       return responsePayload;

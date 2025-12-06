@@ -11,7 +11,7 @@ export const WebSearchModule = {
 
 **REQUIRED WORKFLOW:**
 1. Call websearch.search → get URLs/snippets
-2. Call websearch.site on some URL's → get full page content (REQUIRED!)
+2. Call websearch.site on multiple URL's (if applicable, if too few or no URL's search differently if possible, or fetch the only site. if there is absolutely nothing then report back to the user that nothing has been found about it.) → get full page content (REQUIRED!)
 3. Only THEN explain results to user
 
 Example:

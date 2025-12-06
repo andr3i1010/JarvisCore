@@ -1,4 +1,6 @@
 import type { ModuleObject } from "../types";
+import fs from "fs";
+import path from "path";
 
 const MAIN_SYSTEM_PROMPT = `# TOOL CALLING INSTRUCTIONS
 You are an AI assistant with access to various tools/modules to help fulfill user requests.
@@ -11,9 +13,11 @@ When you decide to invoke a tool, do the following:
 
 Rules:
 - The JSON must be the ABSOLUTE LAST thing in your message
+- Do not append any summary, explanation, or emoji after the JSON
 - Only use parameters documented for that module (no extras)
 - If a tool isn't available, say so instead of calling it
 - Keep a friendly persona: casual tone, occasional emoji, short sentences
+- If you accidentally produce text after the JSON, immediately halt and resend just the JSON on its own/separate line
 
 ## CHAINED TOOL CALLS
 When you need to call multiple tools in sequence:
@@ -33,8 +37,8 @@ function buildModulePrompt(mod: ModuleObject): string {
   Parameters (use ONLY these):
 ${paramLines}`;
 }
-
 export function buildSystemPrompt(modules: ModuleObject[]): string {
   const modulePrompts = modules.map(buildModulePrompt);
-  return MAIN_SYSTEM_PROMPT + "\n\nAvailable modules:\n\n" + modulePrompts.join("\n\n");
+  const syspromptFromFile = fs.readFileSync(path.join(process.cwd(), 'sysprompt.txt'), 'utf-8')
+  return MAIN_SYSTEM_PROMPT + "\n\nAvailable modules:\n\n" + modulePrompts.join("\n\n") + "\n\n" + syspromptFromFile;
 }

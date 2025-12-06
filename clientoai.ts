@@ -2,15 +2,10 @@ import OpenAI from "openai";
 require("dotenv").config();
 
 async function main() {
-  const token = await fetch("http://localhost:8081/token", {
-    body: JSON.stringify({ password: process.env.PASSWORD }),
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
 
   const OAIClient = new OpenAI({
-    apiKey: (await token.json()).token,
-    baseURL: "http://localhost:8081/v1",
+    ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : { apiKey: ""}),
+    baseURL: "http://localhost:8080/v1",
   });
 
   const models = await OAIClient.models.list();
@@ -20,7 +15,7 @@ async function main() {
     model: models.data[0].id,
     messages: [
       { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: "How do you execute tools?" }
+      { role: "user", content: "look up what PolarLearn is online" }
     ],
     stream: true
   });

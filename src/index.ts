@@ -7,7 +7,6 @@ import { setStoreValue } from "./util/dataStore";
 import { getAIProvider } from "./util/ai/provider";
 import { loadModulesFromConfig } from "./util/moduleLoader";
 import { buildSystemPrompt } from "./util/systemPrompt";
-import { startWebSocketServer } from "./server/websocket";
 import { startOpenAICompatServer } from "./server/openaiCompat";
 
 function getGitInfo(): string {
@@ -32,12 +31,7 @@ export default async function main() {
   setStoreValue("system_prompt", buildSystemPrompt(modules));
 
   const port = Number(process.env.PORT) || 8080;
-  startWebSocketServer({ port, aiProvider, modules });
-
-  if (process.env.PUBLISH_OPENAI_COMPATIBLE === "true") {
-    const openaiPort = Number(process.env.OPENAI_PORT) || port + 1;
-    startOpenAICompatServer({ port: openaiPort, aiProvider });
-  }
+  startOpenAICompatServer({ port, aiProvider });
 }
 
 main().catch((err) => {
