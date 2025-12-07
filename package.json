@@ -11,8 +11,11 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
+    "@toon-format/toon": "^2.1.0",
     "@types/ws": "^8.18.1",
     "cheerio": "^1.1.2",
+    "debug": "^4.4.3",
+    "discord.js-selfbot-v13": "^3.7.1",
     "dotenv": "^17.2.2",
     "ollama": "^0.6.3",
     "openai": "^6.9.0",

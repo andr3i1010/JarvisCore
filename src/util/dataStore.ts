@@ -1,4 +1,3 @@
-// store.ts
 const store: Record<string, any> = {};
 
 export function setStoreValue(key: string, value: any) {

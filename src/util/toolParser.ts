@@ -47,7 +47,24 @@ export function detectToolCalls(text: string): DetectedToolCall[] {
   }
 
   // Filter: only keep tool calls on the last line or if they are the only content
-  return toolCalls.filter(tc => isToolCallOnLastLineOrOnly(text, tc));
+  const filtered = toolCalls.filter(tc => isToolCallOnLastLineOrOnly(text, tc));
+
+  // If the entire assistant content consists solely of one or more tool-call JSON
+  // objects (possibly separated by whitespace/newlines), return all detected
+  // tool calls so the server can execute them in the order they appear. This
+  // enables multi-step actions in a single assistant message (e.g. switch
+  // channel then send message).
+  try {
+    let remainder = text;
+    for (const tc of toolCalls) {
+      remainder = remainder.replace(tc._raw, "");
+    }
+    if (remainder.trim() === "") return toolCalls;
+  } catch (err) {
+    // If any unexpected error happens, fall back to the filtered set
+  }
+
+  return filtered;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { encode } from "@toon-format/toon";
 import type { ToolCallRequest, ModuleObject } from "../types";
 import type { DetectedToolCall } from "./toolParser";
 
@@ -42,14 +43,26 @@ export async function executeToolCalls(
 }
 
 export function formatToolResults(results: ToolResult[]): string {
-  return results
-    .map((r) => r.error ? `${r.cmd} failed: ${r.error}` : `${r.cmd} result: ${JSON.stringify(r.result)}`)
-    .join("\n");
+  // Represent the results as a structured object and encode to TOON for
+  // token-efficient, LLM-friendly formatting. Fall back to the previous
+  // plain-string format if encoding fails for any reason.
+  const payload = {
+    tools: results.map((r) => ({ cmd: r.cmd, error: r.error, result: r.result })),
+  };
+
+  try {
+    return encode(payload);
+  } catch (err: any) {
+    log("error", `TOON encoding failed: ${err?.message || String(err)}`);
+    return results
+      .map((r) => (r.error ? `${r.cmd} failed: ${r.error}` : `${r.cmd} result: ${JSON.stringify(r.result)}`))
+      .join("\n");
+  }
 }
 
 export function createToolResultMessage(results: ToolResult[]): { role: string; content: string } {
-  return {
-    role: "user",
-    content: `Here are the tool results:\n${formatToolResults(results)}\n\nPlease provide a friendly explanation of these results to the user.`,
-  };
+  const toon = formatToolResults(results);
+  // Wrap TOON output in a toon code fence to make the format explicit for LLMs.
+  const content = `Here are the tool results:\n\n\`\`\`toon\n${toon}\n\`\`\``;
+  return { role: "user", content };
 }
