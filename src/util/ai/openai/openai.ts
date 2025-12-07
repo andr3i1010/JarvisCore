@@ -1,4 +1,5 @@
 import { AIResponsePacket } from "../../../types";
+import { logger } from "../../logger";
 import { OpenAIProviderConfig } from "./openai.types";
 import OpenAI from "openai";
 
@@ -15,13 +16,30 @@ export class OpenAIProvider {
   }
 
   async *streamChat(messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): AsyncGenerator<AIResponsePacket> {
-    const stream = await this.OAIClient.chat.completions.create({
+    let reasoning_effort: any | undefined;
+    switch (this.config.model) {
+      case 'gpt-5-chat-latest':
+        reasoning_effort = undefined;
+        break;
+      case 'gpt-5.1':
+        reasoning_effort = 'medium';
+        break;
+      case 'gpt-5-pro':
+        logger.error("GPT-5-Pro is not supported due to it not supporting the OpenAI Completions API. Exiting....")
+        process.exit(1);
+    }
+    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: this.config.model,
       messages,
       temperature: this.config.temperature || 1,
       stream: true,
-      reasoning_effort: 'medium'
-    })
+    };
+
+    if (reasoning_effort !== undefined) {
+      (params as any).reasoning_effort = reasoning_effort;
+    }
+
+    const stream = await this.OAIClient.chat.completions.create(params)
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;

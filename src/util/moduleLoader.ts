@@ -35,7 +35,8 @@ async function loadURLModule(url: string): Promise<any> {
 }
 
 export async function loadModulesFromConfig(configPath: string): Promise<ModuleObject[]> {
-  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const raw = await fs.promises.readFile(configPath, "utf8");
+  const config = JSON.parse(raw);
   const moduleObjects: ModuleObject[] = [];
 
   for (const modulePath of config.modules) {
