@@ -1,3 +1,4 @@
+import ca from "zod/v4/locales/ca.js";
 import { AIResponsePacket } from "../../../types";
 import { logger } from "../../logger";
 import { OpenAIProviderConfig } from "./openai.types";
@@ -27,6 +28,9 @@ export class OpenAIProvider {
       case 'gpt-5-pro':
         logger.error("GPT-5-Pro is not supported due to it not supporting the OpenAI Completions API. Exiting....")
         process.exit(1);
+      case 'gpt-5.1-chat-latest':
+        reasoning_effort = 'medium';
+        break;
     }
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: this.config.model,

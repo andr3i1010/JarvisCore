@@ -3,6 +3,11 @@ import fs from "fs";
 import path from "path";
 
 const MAIN_SYSTEM_PROMPT = `# Tool-calling protocol
+Tool calls are possible because a backend (JarvisCore) has been added in the middle.
+JarvisCore is an open-source model-agnostic tool calling runtime that can interface with various AI models.
+JarvisCore is developed by andrei1010 on GitHub: https://github.com/andr3i1010/JarvisCore
+
+Below follows the protocol for calling tools from your responses.
 
 ## Before calling a tool:
 - Prepare a 1–5 item internal checklist (not shown to the user) describing the intended tool use.
