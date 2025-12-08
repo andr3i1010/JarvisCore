@@ -3,11 +3,25 @@ import { ToolCallResponse } from '../../types';
 import { TTLCache } from '../../util/cache';
 
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RESULTS = 5;
+const MAX_SNIPPET_LENGTH = 320;
+const MAX_TITLE_LENGTH = 200;
+const MAX_LINK_LENGTH = 300;
 const searchCache = new TTLCache<string, ToolCallResponse>(SEARCH_CACHE_TTL_MS);
+
+const ELLIPSIS = "…";
+
+function truncate(value: string, maxLength: number): string {
+  if (!value) return value;
+  if (maxLength <= 0) return "";
+  if (value.length <= maxLength) return value;
+  if (maxLength === 1) return value.slice(0, 1);
+  return value.slice(0, maxLength - 1) + ELLIPSIS;
+}
 
 export const WebSearchModule = {
   name: "websearch.search",
-  description: `Search DuckDuckGo. Returns URLs and snippets.
+  description: `Search DuckDuckGo. Returns up to ${MAX_RESULTS} URLs with truncated titles/snippets to keep tokens low.
 
 **REQUIRED WORKFLOW:**
 1. Call websearch.search → get URLs/snippets
@@ -55,9 +69,16 @@ NEVER skip step 2. NEVER add text before step 2's JSON.`,
       const results: { title: string; link: string; snippet: string }[] = [];
 
       $('.result__body').each((i, el) => {
-        const title = $(el).find('.result__title a').text().trim();
-        const link = $(el).find('.result__url').text().trim();
-        const snippet = $(el).find('.result__snippet').text().trim();
+        if (results.length >= MAX_RESULTS) return false;
+
+        const titleRaw = $(el).find('.result__title a').text().trim();
+        const linkRaw = $(el).find('.result__url').text().trim();
+        const snippetRaw = $(el).find('.result__snippet').text().trim();
+
+        const title = truncate(titleRaw, MAX_TITLE_LENGTH);
+        const link = truncate(linkRaw, MAX_LINK_LENGTH);
+        const snippet = truncate(snippetRaw, MAX_SNIPPET_LENGTH);
+
         if (title && link) {
           results.push({ title, link, snippet });
         }

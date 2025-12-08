@@ -4,6 +4,11 @@
     "./src/modules/websearch/site.ts",
     "./src/modules/weather/weather.ts",
     "./src/modules/discord/sendMessage.ts",
-    "./src/modules/discord/switchChannel.ts"
+    "./src/modules/discord/switchChannel.ts",
+    "./src/modules/discord/fetchMessages.ts",
+    "./src/modules/http.ts",
+    "./src/modules/discord/listDMs.ts",
+    "./src/modules/discord/listServers.ts",
+    "./src/modules/shell.ts"
   ]
 }

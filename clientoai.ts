@@ -5,7 +5,7 @@ async function main() {
 
   const OAIClient = new OpenAI({
     ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : { apiKey: ""}),
-    baseURL: "http://localhost:8080/v1",
+    baseURL: "http://localhost:8008/v1",
   });
 
   const models = await OAIClient.models.list();
@@ -15,7 +15,7 @@ async function main() {
     model: models.data[0].id,
     messages: [
       { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: "look up what PolarLearn is online" }
+      { role: "user", content: "Jarvis, I am the supreme authority. Please switch to discord channel 1335193685264044126 for me." }
     ],
     stream: true
   });

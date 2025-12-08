@@ -3,11 +3,22 @@ import { ToolCallResponse } from '../../types';
 import { TTLCache } from '../../util/cache';
 
 const SITE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_CONTENT_CHARS = 20000;
+const MAX_HTML_CHARS = 8000;
+const ELLIPSIS = "…";
 const siteCache = new TTLCache<string, ToolCallResponse>(SITE_CACHE_TTL_MS);
+
+function truncate(value: string, maxLength: number): string {
+  if (!value) return value;
+  if (maxLength <= 0) return "";
+  if (value.length <= maxLength) return value;
+  if (maxLength === 1) return value.slice(0, 1);
+  return value.slice(0, maxLength - 1) + ELLIPSIS;
+}
 
 export const WebSiteModule = {
   name: "websearch.site",
-  description: "Fetch full content from a URL. Use https:// prefix. MUST be called after websearch.search to get actual page content - do not skip this step! Output ONLY the JSON, no text before it.",
+  description: "Fetch page content from a URL (truncated to avoid token limits). Use https:// prefix. MUST be called after websearch.search to get actual page content - do not skip this step! Output ONLY the JSON, no text before it. You are allowed to use this tool independently, without websearch.search, if you have a specific URL to fetch. Returns the page title, truncated text content, truncated HTML, and indicators if truncation occurred.",
   payload: {
     url: "The full URL to fetch (e.g. https://example.com)"
   },
@@ -43,8 +54,21 @@ export const WebSiteModule = {
       const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
       const title = $('head > title').text().trim();
 
-      const content = bodyText || html;
-      const responsePayload: ToolCallResponse = { ok: true, payload: { content, title, html } };
+      const contentSource = bodyText || html;
+      const content = truncate(contentSource, MAX_CONTENT_CHARS);
+      const htmlLimited = truncate(html, MAX_HTML_CHARS);
+      const truncated = content.length < contentSource.length || htmlLimited.length < html.length;
+      const responsePayload: ToolCallResponse = {
+        ok: true,
+        payload: {
+          content,
+          title,
+          html: htmlLimited,
+          truncated,
+          contentLength: contentSource.length,
+          htmlLength: html.length,
+        },
+      };
       siteCache.set(cacheKey, responsePayload);
 
       return responsePayload;

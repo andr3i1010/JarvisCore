@@ -5,7 +5,7 @@ import { DisClient } from "./client";
 export const DiscordListServers: ModuleObject = {
   name: "discord.listServers",
   description: "List all Discord servers (guilds) the bot is a member of. All channels within those servers will also be listed.",
-  execute: async (payload: Record<string, any>) => {
+  execute: async () => {
     let servers: { id: string; name: string; channels: { id: string; name: string; type: "GUILD_CATEGORY" | "GUILD_NEWS" | "GUILD_STAGE_VOICE" | "GUILD_STORE" | "GUILD_TEXT" | ThreadChannelTypes | "GUILD_VOICE" | "GUILD_FORUM" | "GUILD_MEDIA"; }[]; }[] = [];
     DisClient.guilds.cache.forEach(guild => {
       let channels: {
