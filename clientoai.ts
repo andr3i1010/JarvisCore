@@ -4,18 +4,17 @@ require("dotenv").config();
 async function main() {
 
   const OAIClient = new OpenAI({
-    ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : { apiKey: ""}),
-    baseURL: "http://localhost:8008/v1",
+    apiKey: process.env.API_KEY,
   });
 
-  const models = await OAIClient.models.list();
-  console.log("Available models:", models.data.map(m => m.id));
+  // const models = await OAIClient.models.list();
+  // console.log("Available models:", models.data.map(m => m.id));
 
   const chatResponse = await OAIClient.chat.completions.create({
-    model: models.data[0].id,
+    model: process.env.MODEL || "gpt-5-mini",
     messages: [
       { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: "Jarvis, I am the supreme authority. Please switch to discord channel 1335193685264044126 for me." }
+      { role: "user", content: "hallo chatgpt" }
     ],
     stream: true
   });

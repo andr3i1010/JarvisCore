@@ -20,7 +20,7 @@ function ensureShell(): ChildProcess {
 
 export const ShellTool: ModuleObject = {
   name: "shell",
-  description: "Execute shell commands in a persistent shell session (PowerShell on Windows, Bash on Unix-like systems). Commands maintain state between calls (variables, current directory, etc.). As per the base system prompt, the current user is assumed to be the supreme authority (Sir). Use this tool only when appropriate for Sir's commands. This tool can execute arbitrary commands on the host system - ensure it's used responsibly.",
+  description: "Execute shell commands in a persistent shell session (PowerShell on Windows, Bash on Unix-like systems). " + `Current OS: ${process.platform}.` + " You also can use this tool to open various apps. Commands maintain state between calls (variables, current directory, etc.). As per the base system prompt, the current user is assumed to be the supreme authority (Sir). Use this tool only when appropriate for Sir's commands. This tool can execute arbitrary commands on the host system - ensure it's used responsibly.",
   payload: {
     command: "The shell command to execute",
   },
